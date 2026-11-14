@@ -4,43 +4,61 @@ function toSeconds(str) {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
-// Источник 1: ползунок плеера (значения в секундах)
-function fromSlider() {
-  const el = document.querySelector("ytmusic-player-bar #progress-bar");
-  if (!el) return null;
-  const position = Number(el.getAttribute("aria-valuenow"));
-  const duration = Number(el.getAttribute("aria-valuemax"));
-  if (duration > 0 && position >= 0 && position <= duration) {
-    return { position, duration };
-  }
-  return null;
+function getPlayer() {
+  const el = document.querySelector("#movie_player");
+  return el ? el.wrappedJSObject : null;
 }
 
-// Источник 2: текст «0:20 / 2:19» в панели плеера
-function fromPlayerBar() {
-  const el = document.querySelector("ytmusic-player-bar .time-info");
-  if (!el) return null;
-  const [cur, total] = el.textContent.split("/");
-  const position = toSeconds(cur || "");
-  const duration = toSeconds(total || "");
-  if (position !== null && duration && position <= duration) {
-    return { position, duration };
-  }
-  return null;
-}
-
-// Источник 3: внутренний API плеера YouTube
-function fromPlayerApi() {
-  try {
-    const player = document.querySelector("#movie_player");
-    const api = player && player.wrappedJSObject;
-    if (!api || !api.getCurrentTime || !api.getDuration) return null;
-    const position = api.getCurrentTime();
-    const duration = api.getDuration();
-    if (duration > 0 && position >= 0 && position <= duration + 1) {
-      return { position, duration };
+// Способ 1: ищем в панели плеера текст вида «0:20 / 2:19» (без привязки к классам)
+function readBarText() {
+  const bar = document.querySelector("ytmusic-player-bar");
+  if (!bar) return null;
+  const re = /^\s*(\d+(?::\d+)+)\s*\/\s*(\d+(?::\d+)+)\s*$/;
+  for (const el of bar.querySelectorAll("*")) {
+    if (el.children.length) continue;
+    const m = re.exec(el.textContent);
+    if (m) {
+      const position = toSeconds(m[1]);
+      const duration = toSeconds(m[2]);
+      if (position !== null && duration) return { position, duration };
     }
-  } catch (e) {}
+  }
+  return null;
+}
+
+// Способ 2 и 3: данные из плеера YouTube
+function readApi() {
+  try {
+    const api = getPlayer();
+    if (!api) return null;
+    const position = api.getCurrentTime();
+    let duration = null;
+    try {
+      const len = Number(api.getPlayerResponse().videoDetails.lengthSeconds);
+      if (len > 0) duration = len;
+    } catch (e) {}
+    return { position, duration, rawDuration: api.getDuration() };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getTimes() {
+  const text = readBarText();
+  const api = readApi();
+
+  const position = api ? api.position : text ? text.position : null;
+  if (position === null) return null;
+
+  if (text && text.duration >= position - 1) {
+    return { position, duration: text.duration, src: "text" };
+  }
+  if (api && api.duration && api.duration >= position - 1) {
+    return { position, duration: api.duration, src: "meta" };
+  }
+  if (api && api.rawDuration > 0) {
+    return { position, duration: api.rawDuration, src: "raw" };
+  }
   return null;
 }
 
@@ -49,7 +67,7 @@ function getInfo() {
   const video = document.querySelector("video");
   if (!md || !md.title || !video) return { playing: false };
 
-  const times = fromSlider() || fromPlayerBar() || fromPlayerApi();
+  const times = getTimes();
   if (!times) return { playing: false };
 
   const art = md.artwork && md.artwork.length
@@ -64,29 +82,52 @@ function getInfo() {
     cover: art,
     position: times.position,
     duration: times.duration,
+    src: times.src,
   };
 }
 
+// Отладка: сработает, только если не удалось получить настоящую длину
+let dumpedFor = null;
+function debugDump(info) {
+  if (dumpedFor === info.title) return;
+  dumpedFor = info.title;
+  const safe = (fn) => { try { return fn(); } catch (e) { return "ошибка: " + e; } };
+  const bar = document.querySelector("ytmusic-player-bar");
+  console.warn("[YTM-DEBUG] нет настоящей длины", JSON.stringify({
+    title: info.title,
+    position: info.position,
+    duration: info.duration,
+    barTexts: bar
+      ? Array.from(bar.querySelectorAll("*"))
+          .filter((e) => !e.children.length && /\d:\d\d/.test(e.textContent))
+          .map((e) => e.tagName + "." + e.className + "=" + e.textContent.trim())
+      : "нет ytmusic-player-bar",
+    hasGetPlayerResponse: safe(() => typeof getPlayer().getPlayerResponse),
+    lengthSeconds: safe(() => getPlayer().getPlayerResponse().videoDetails.lengthSeconds),
+    videoDuration: safe(() => document.querySelector("video").duration),
+  }));
+}
+
 let lastTitle = null;
-let pinned = { duration: 0 };
+let pinned = 0;
 
 setInterval(() => {
   const info = getInfo();
 
   if (info.title) {
+    const raw = info.duration;
     const titleChanged = info.title !== lastTitle;
 
-    // В начале трека запоминаем его длительность
-    if (titleChanged || info.position < 3) {
-      pinned = { duration: info.duration };
-    }
-    // Трек только что сменился: пропускаем один замер
+    if (titleChanged || info.position < 3) pinned = raw;
+    if (info.position > pinned) pinned = raw;
+
+    if (info.src === "raw") debugDump(info);
+
     if (titleChanged) {
       lastTitle = info.title;
       return;
     }
-    // Дальше используем запомненную длительность
-    info.duration = pinned.duration;
+    info.duration = pinned;
   }
 
   browser.runtime.sendMessage(info);

@@ -7,11 +7,11 @@
 
 ## Установка
 1. Установи зависимости: `pip install -r requirements.txt`
-2. Запусти сервер: `python server/server.py` (Discord должен быть запущен).
+2. Запусти сервер: `python server/server.pyw` (Discord должен быть запущен).
 3. Загрузи расширение в Firefox: `about:debugging#/runtime/this-firefox` → Load Temporary Add-on → `extension/manifest.json`.
 
 ### Свой Application ID (необязательно)
-По умолчанию используется моё приложение «YouTube Music». Если хочешь своё название, создай приложение на https://discord.com/developers/applications и вставь его Application ID в `server/server.py` (переменная `CLIENT_ID`).
+По умолчанию используется моё приложение «YouTube Music». Если хочешь своё название, создай приложение на https://discord.com/developers/applications и вставь его Application ID в `server/server.pyw` (переменная `CLIENT_ID`).
 
 ## Требования
 - Python 3.9+

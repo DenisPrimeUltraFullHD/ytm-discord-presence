@@ -7,7 +7,13 @@ from pypresence import Presence, ActivityType
 CLIENT_ID = "1571152150162047129"
 
 rpc = Presence(CLIENT_ID)
-rpc.connect()
+
+while True:
+    try:
+        rpc.connect()
+        break
+    except Exception:
+        time.sleep(5)
 
 lock = threading.Lock()
 state = {"key": None, "start": 0, "tab": None, "last_seen": 0}

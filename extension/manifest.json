@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "YTM Discord Presence",
-  "version": "1.0",
+  "version": "1.1",
   "browser_specific_settings": {
     "gecko": {
       "id": "ytm-discord-rpc-k7x2q@example.com",
